@@ -10,6 +10,8 @@ require (
 	github.com/imdario/mergo v0.3.8 // indirect
 	github.com/json-iterator/go v1.1.9 // indirect
 	github.com/mesosphere/kubeaddons v0.10.0
+	github.com/onsi/ginkgo v1.12.0
+	github.com/onsi/gomega v1.9.0
 	go.uber.org/atomic v1.5.1 // indirect
 	go.uber.org/multierr v1.4.0 // indirect
 	go.uber.org/zap v1.13.0 // indirect
@@ -22,7 +24,9 @@ require (
 	golang.org/x/tools v0.0.0-20200122042241-dc16b66866f1 // indirect
 	google.golang.org/appengine v1.6.5 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20200121175148-a6ecf24a6d71 // indirect
+	k8s.io/api v0.17.3
 	k8s.io/apimachinery v0.17.3
+	k8s.io/client-go v11.0.1-0.20190409021438-1a26190bd76a+incompatible
 	k8s.io/utils v0.0.0-20200117235808-5f6fbceb4c31 // indirect
 	sigs.k8s.io/kind v0.7.0
 )

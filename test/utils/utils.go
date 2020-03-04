@@ -1,19 +1,22 @@
-package test
+package utils
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"os"
 	"os/exec"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/blang/semver"
-	"github.com/google/uuid"
-
 	volumetypes "github.com/docker/docker/api/types/volume"
 	docker "github.com/docker/docker/client"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/kind/pkg/apis/config/v1alpha3"
 
 	"github.com/mesosphere/kubeaddons/pkg/api/v1beta1"
@@ -26,7 +29,7 @@ import (
 
 const (
 	controllerBundle         = "https://mesosphere.github.io/kubeaddons/bundle.yaml"
-	defaultKubernetesVersion = "1.16.4"
+	defaultKubernetesVersion = "1.17.0"
 )
 
 var addonTestingGroups = make(map[string][]AddonTestConfiguration)
@@ -40,14 +43,16 @@ type AddonTestConfiguration struct {
 }
 
 var (
-	cat       catalog.Catalog
-	localRepo repositories.Repository
-	groups    map[string][]v1beta1.AddonInterface
+	cat        catalog.Catalog
+	localRepo  repositories.Repository
+	groups     map[string][]v1beta1.AddonInterface
+	addonsPath = "../../../addons/"
+	groupsPath = "../../groups.yaml"
 )
 
 func init() {
 	var err error
-	localRepo, err = local.NewRepository("local", "../addons/")
+	localRepo, err = local.NewRepository("local", addonsPath)
 	if err != nil {
 		panic(err)
 	}
@@ -57,7 +62,7 @@ func init() {
 		panic(err)
 	}
 
-	groups, err = test.AddonsForGroupsFile("groups.yaml", cat)
+	groups, err = test.AddonsForGroupsFile(groupsPath, cat)
 	if err != nil {
 		panic(err)
 	}
@@ -73,45 +78,6 @@ func init() {
 			}
 			addonTestingGroups[group] = append(addonTestingGroups[group], cfg)
 		}
-	}
-}
-
-func TestValidateUnhandledAddons(t *testing.T) {
-	unhandled, err := findUnhandled()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(unhandled) != 0 {
-		names := make([]string, len(unhandled))
-		for _, addon := range unhandled {
-			names = append(names, addon.GetName())
-		}
-		t.Fatal(fmt.Errorf("the following addons are not handled as part of a testing group: %+v", names))
-	}
-}
-
-func TestGeneralGroup(t *testing.T) {
-	if err := testgroup(t, "general"); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestKafkaGroup(t *testing.T) {
-	if err := testgroup(t, "kafka"); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestCassandraGroup(t *testing.T) {
-	if err := testgroup(t, "cassandra"); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestSparkGroup(t *testing.T) {
-	if err := testgroup(t, "spark"); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -164,7 +130,7 @@ func cleanupNodeVolumes(numberVolumes int, nodePrefix string) error {
 	return nil
 }
 
-func testgroup(t *testing.T, groupname string) error {
+func GroupTest(t *testing.T, groupname string) error {
 	t.Logf("testing group %s", groupname)
 
 	version, err := semver.Parse(defaultKubernetesVersion)
@@ -194,11 +160,32 @@ func testgroup(t *testing.T, groupname string) error {
 		return err
 	}
 
+	if err = waitForPod(cluster.Client(), fmt.Sprintf("etcd-%s-control-plane", cluster.Name()), "kube-system", 120); err != nil {
+		return err
+	}
+	if err = waitForPod(cluster.Client(), fmt.Sprintf("kube-apiserver-%s-control-plane", cluster.Name()), "kube-system", 120); err != nil {
+		return err
+	}
+	if err = waitForPod(cluster.Client(), fmt.Sprintf("kube-scheduler-%s-control-plane", cluster.Name()), "kube-system", 120); err != nil {
+		return err
+	}
+	if err = waitForPod(cluster.Client(), fmt.Sprintf("kube-controller-manager-%s-control-plane", cluster.Name()), "kube-system", 120); err != nil {
+		return err
+	}
+
+	if err = waitForDeployment(cluster.Client(), "local-path-provisioner", "local-path-storage", 120); err != nil {
+		return err
+	}
+
 	addons, err := addons(addonTestingGroups[groupname]...)
 	if err != nil {
 		return err
 	}
 
+	err = createNamespaces(cluster.Client(), addons)
+	if err != nil {
+		return err
+	}
 	ph, err := test.NewBasicTestHarness(t, cluster, addons...)
 	if err != nil {
 		return err
@@ -218,10 +205,78 @@ func testgroup(t *testing.T, groupname string) error {
 	return nil
 }
 
+func createNamespaces(client kubernetes.Interface, addons []v1beta1.AddonInterface) error {
+	for _, addon := range addons {
+		ns := &v1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: addon.GetNamespace(),
+			},
+		}
+		_, err := client.CoreV1().Namespaces().Create(ns)
+		if err != nil {
+			return fmt.Errorf("could not create addon %s namespace: %w", addon.GetName(), err)
+		}
+	}
+	return nil
+}
+
+func waitForPod(client kubernetes.Interface, name, namespace string, timeoutSeconds time.Duration) error {
+	timeout := time.After(timeoutSeconds * time.Second)
+	tick := time.Tick(2 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			return errors.New(fmt.Sprintf("Timeout while waiting for pod %s ready replicas count to be %d", namespace, name))
+		case <-tick:
+			if isPodReady(client, name, namespace) {
+				return nil
+			}
+		}
+	}
+}
+
+func waitForDeployment(client kubernetes.Interface, name, namespace string, timeoutSeconds time.Duration) error {
+	timeout := time.After(timeoutSeconds * time.Second)
+	tick := time.Tick(2 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			return errors.New(fmt.Sprintf("Timeout while waiting for pod %s ready replicas count to be %d", namespace, name))
+		case <-tick:
+			if isDeploymentReady(client, name, namespace, int32(1)) {
+				return nil
+			}
+		}
+	}
+}
+
+func isPodReady(client kubernetes.Interface, name, namespace string) bool {
+	pod, err := client.CoreV1().Pods(namespace).Get(name, metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+	if pod.Status.Phase == v1.PodRunning {
+		return true
+	}
+	return false
+}
+
+func isDeploymentReady(client kubernetes.Interface, name, namespace string, expectedCount int32) bool {
+	deployment, err := client.AppsV1().Deployments(namespace).Get(name, metav1.GetOptions{})
+
+	if err != nil {
+		return false
+	}
+	if deployment.Status.ReadyReplicas == expectedCount {
+		return true
+	}
+	return false
+}
+
 func addons(addonConfigs ...AddonTestConfiguration) ([]v1beta1.AddonInterface, error) {
 	var testAddons []v1beta1.AddonInterface
 
-	repo, err := local.NewRepository("base", "../addons")
+	repo, err := local.NewRepository("base", addonsPath)
 	if err != nil {
 		return testAddons, err
 	}
@@ -232,7 +287,7 @@ func addons(addonConfigs ...AddonTestConfiguration) ([]v1beta1.AddonInterface, e
 		}
 		overrides(addon[0], addonConfig)
 		if addon[0].GetNamespace() == "" {
-			addon[0].SetNamespace("default")
+			addon[0].SetNamespace(addon[0].GetName())
 		}
 		// TODO - we need to re-org where these filters are done (see: https://jira.mesosphere.com/browse/DCOS-63260)
 		testAddons = append(testAddons, addon[0])
@@ -245,9 +300,9 @@ func addons(addonConfigs ...AddonTestConfiguration) ([]v1beta1.AddonInterface, e
 	return testAddons, nil
 }
 
-func findUnhandled() ([]v1beta1.AddonInterface, error) {
+func FindUnhandled() ([]v1beta1.AddonInterface, error) {
 	var unhandled []v1beta1.AddonInterface
-	repo, err := local.NewRepository("base", "../addons")
+	repo, err := local.NewRepository("base", addonsPath)
 	if err != nil {
 		return unhandled, err
 	}
@@ -320,7 +375,7 @@ func removeLabelsIndex(s []metav1.LabelSelector, index int) []metav1.LabelSelect
 func overridesForAddon(name string) string {
 	switch name {
 	case "kafka":
-		return `ZOOKEEPER_URI: zookeeper-cs
+		return `ZOOKEEPER_URI: zookeeper-cs.zookeeper.svc.cluster.local
 BROKER_MEM: 32Mi
 BROKER_CPUS: 20m
 BROKER_COUNT: 1
