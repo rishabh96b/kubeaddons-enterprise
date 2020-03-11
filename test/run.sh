@@ -43,7 +43,7 @@ test_list(){
 }
 
 run_test(){
-  go test $1 -race -v -timeout "${TEST_TIMEOUT}" #indiviual timeouts
+  go test $1 -tags experimental -race -v -timeout "${TEST_TIMEOUT}" #indiviual timeouts
 }
 
 run_tests(){

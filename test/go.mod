@@ -4,9 +4,7 @@ go 1.13
 
 require (
 	github.com/blang/semver v3.5.1+incompatible
-	github.com/docker/docker v1.4.2-0.20190916154449-92cc603036dd
 	github.com/google/gofuzz v1.1.0 // indirect
-	github.com/google/uuid v1.1.1
 	github.com/imdario/mergo v0.3.8 // indirect
 	github.com/json-iterator/go v1.1.9 // indirect
 	github.com/mesosphere/kubeaddons v0.10.0
@@ -28,7 +26,6 @@ require (
 	k8s.io/apimachinery v0.17.3
 	k8s.io/client-go v11.0.1-0.20190409021438-1a26190bd76a+incompatible
 	k8s.io/utils v0.0.0-20200117235808-5f6fbceb4c31 // indirect
-	sigs.k8s.io/kind v0.7.0
 )
 
 replace k8s.io/client-go => k8s.io/client-go v0.0.0-20191114101535-6c5935290e33

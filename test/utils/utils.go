@@ -14,7 +14,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-
 	"github.com/mesosphere/kubeaddons/pkg/api/v1beta1"
 	"github.com/mesosphere/kubeaddons/pkg/catalog"
 	"github.com/mesosphere/kubeaddons/pkg/repositories"
@@ -357,3 +356,4 @@ func kubectl(args ...string) error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
+
