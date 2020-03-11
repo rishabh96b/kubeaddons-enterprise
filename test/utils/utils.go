@@ -1,10 +1,8 @@
 package utils
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"os"
 	"os/exec"
 	"sync"
@@ -12,12 +10,10 @@ import (
 	"time"
 
 	"github.com/blang/semver"
-	volumetypes "github.com/docker/docker/api/types/volume"
-	docker "github.com/docker/docker/client"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"sigs.k8s.io/kind/pkg/apis/config/v1alpha3"
+
 
 	"github.com/mesosphere/kubeaddons/pkg/api/v1beta1"
 	"github.com/mesosphere/kubeaddons/pkg/catalog"
@@ -85,51 +81,6 @@ func init() {
 // Private Functions
 // -----------------------------------------------------------------------------
 
-func createNodeVolumes(numberVolumes int, nodePrefix string, node *v1alpha3.Node) error {
-	dockerClient, err := docker.NewClientWithOpts(docker.FromEnv)
-	if err != nil {
-		return fmt.Errorf("creating docker client: %w", err)
-	}
-	dockerClient.NegotiateAPIVersion(context.TODO())
-
-	for index := 0; index < numberVolumes; index++ {
-		volumeName := fmt.Sprintf("%s-%d", nodePrefix, index)
-
-		volume, err := dockerClient.VolumeCreate(context.TODO(), volumetypes.VolumeCreateBody{
-			Driver: "local",
-			Name:   volumeName,
-		})
-		if err != nil {
-			return fmt.Errorf("creating volume for node: %w", err)
-		}
-
-		node.ExtraMounts = append(node.ExtraMounts, v1alpha3.Mount{
-			ContainerPath: fmt.Sprintf("/mnt/disks/%s", volumeName),
-			HostPath:      volume.Mountpoint,
-		})
-	}
-
-	return nil
-}
-
-func cleanupNodeVolumes(numberVolumes int, nodePrefix string) error {
-	dockerClient, err := docker.NewClientWithOpts(docker.FromEnv)
-	if err != nil {
-		return fmt.Errorf("creating docker client: %w", err)
-	}
-	dockerClient.NegotiateAPIVersion(context.TODO())
-
-	for index := 0; index < numberVolumes; index++ {
-		volumeName := fmt.Sprintf("%s-%d", nodePrefix, index)
-
-		if err := dockerClient.VolumeRemove(context.TODO(), volumeName, false); err != nil {
-			return fmt.Errorf("removing volume for node: %w", err)
-		}
-	}
-
-	return nil
-}
-
 func GroupTest(t *testing.T, groupname string) error {
 	t.Logf("testing group %s", groupname)
 
@@ -137,18 +88,6 @@ func GroupTest(t *testing.T, groupname string) error {
 	if err != nil {
 		return err
 	}
-
-	u := uuid.New()
-
-	node := v1alpha3.Node{}
-	if err := createNodeVolumes(3, u.String(), &node); err != nil {
-		return err
-	}
-	defer func() {
-		if err := cleanupNodeVolumes(3, u.String()); err != nil {
-			t.Logf("error: %s", err)
-		}
-	}()
 
 	cluster, err := kind.NewCluster(version)
 	if err != nil {
@@ -172,7 +111,6 @@ func GroupTest(t *testing.T, groupname string) error {
 	if err = waitForPod(cluster.Client(), fmt.Sprintf("kube-controller-manager-%s-control-plane", cluster.Name()), "kube-system", 120); err != nil {
 		return err
 	}
-
 	if err = waitForDeployment(cluster.Client(), "local-path-provisioner", "local-path-storage", 120); err != nil {
 		return err
 	}
