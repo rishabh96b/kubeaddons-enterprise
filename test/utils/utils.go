@@ -123,6 +123,7 @@ func GroupTest(t *testing.T, groupname string) error {
 	if err != nil {
 		return err
 	}
+	time.Sleep(20 * time.Second)
 	ph, err := test.NewBasicTestHarness(t, cluster, addons...)
 	if err != nil {
 		return err
@@ -356,4 +357,3 @@ func kubectl(args ...string) error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
-
