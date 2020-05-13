@@ -1,5 +1,0 @@
-kubeconfig
-bin/
-dist/
-kind-logs-*/
-**/*.kube/
