@@ -1,3 +1,4 @@
+---
 jenkins:
   display_name: Jenkins
   description: Jenkins
@@ -15,6 +16,7 @@ jenkins:
       - type: support
         title: Submit a Support Request
         link: https://d2iq.com/services-and-support
+---
 kafka:
   display_name: Kafka
   description: Apache Kafka
@@ -32,6 +34,7 @@ kafka:
       - type: support
         title: Submit a Support Request
         link: https://d2iq.com/services-and-support
+---
 spark:
   display_name: Spark
   description: Apache Spark
@@ -49,6 +52,7 @@ spark:
       - type: support
         title: Submit a Support Request
         link: https://d2iq.com/services-and-support
+---
 zookeeper:
   display_name: Zookeeper
   description: Apache Zookeeper
@@ -66,6 +70,7 @@ zookeeper:
       - type: support
         title: Submit a Support Request
         link: https://d2iq.com/services-and-support
+---
 cassandra:
   display_name: Cassandra
   description: Apache Cassandra
